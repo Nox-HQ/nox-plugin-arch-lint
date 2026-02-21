@@ -1,0 +1,7 @@
+name: nox-plugin-arch-lint
+version: 0.1.0
+track: core-analysis
+description: Detect architectural anti-patterns that create security risks
+tools:
+  - name: scan
+    description: Detect circular dependencies, god objects, security-critical code mixing, and missing abstraction layers

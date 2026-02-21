@@ -146,18 +146,18 @@ func handleScan(ctx context.Context, req sdk.ToolRequest) (*pluginv1.InvokeToolR
 	}
 
 	// Analyze collected data.
-	for _, fi := range files {
+	for i := range files {
 		// ARCH-001: Check for circular dependency indicators.
-		checkCircularDeps(resp, fi, importGraph, workspaceRoot)
+		checkCircularDeps(resp, &files[i], importGraph, workspaceRoot)
 
 		// ARCH-002: Check for god objects.
-		checkGodObject(resp, fi)
+		checkGodObject(resp, &files[i])
 
 		// ARCH-003: Check for security-critical code without separation.
-		checkSecurityMixing(resp, fi)
+		checkSecurityMixing(resp, &files[i])
 
 		// ARCH-004: Check for missing abstraction layer.
-		checkMissingAbstraction(resp, fi)
+		checkMissingAbstraction(resp, &files[i])
 	}
 
 	return resp.Build(), nil
@@ -185,7 +185,7 @@ func parseFile(filePath, ext string) (fileInfo, error) {
 	if err != nil {
 		return fileInfo{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	info := fileInfo{
 		path: filePath,
@@ -236,7 +236,7 @@ func parseFile(filePath, ext string) (fileInfo, error) {
 }
 
 // checkCircularDeps detects mutual import patterns between files.
-func checkCircularDeps(resp *sdk.ResponseBuilder, fi fileInfo, importGraph map[string][]string, workspaceRoot string) {
+func checkCircularDeps(resp *sdk.ResponseBuilder, fi *fileInfo, importGraph map[string][]string, workspaceRoot string) {
 	relPath, _ := filepath.Rel(workspaceRoot, fi.path)
 	if relPath == "" {
 		relPath = fi.path
@@ -279,7 +279,7 @@ func checkCircularDeps(resp *sdk.ResponseBuilder, fi fileInfo, importGraph map[s
 }
 
 // checkGodObject flags files that exceed the line threshold with many exports.
-func checkGodObject(resp *sdk.ResponseBuilder, fi fileInfo) {
+func checkGodObject(resp *sdk.ResponseBuilder, fi *fileInfo) {
 	if fi.lineCount > godFileThreshold && fi.exports >= godExportThreshold {
 		resp.Finding(
 			"ARCH-002",
@@ -296,7 +296,7 @@ func checkGodObject(resp *sdk.ResponseBuilder, fi fileInfo) {
 }
 
 // checkSecurityMixing detects crypto/auth logic mixed with business logic in the same file.
-func checkSecurityMixing(resp *sdk.ResponseBuilder, fi fileInfo) {
+func checkSecurityMixing(resp *sdk.ResponseBuilder, fi *fileInfo) {
 	hasCrypto := false
 	hasAuth := false
 	hasBizLogic := false
@@ -390,7 +390,7 @@ func checkSecurityMixing(resp *sdk.ResponseBuilder, fi fileInfo) {
 }
 
 // checkMissingAbstraction detects direct database calls in handler/controller files.
-func checkMissingAbstraction(resp *sdk.ResponseBuilder, fi fileInfo) {
+func checkMissingAbstraction(resp *sdk.ResponseBuilder, fi *fileInfo) {
 	isHandler := false
 
 	for _, line := range fi.lines {
@@ -436,12 +436,17 @@ func extToLanguage(ext string) string {
 }
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
 	srv := buildServer()
 	if err := srv.Serve(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "nox-plugin-arch-lint: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
